@@ -1,0 +1,5 @@
+qemu/build/
+.venv/
+firmware/
+.DS_Store
+dist/

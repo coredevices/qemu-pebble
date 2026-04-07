@@ -1,0 +1,7 @@
+Copyright (c) 2026 Core Devices LLC
+
+This project is licensed under the GNU General Public License, version 2.
+
+Note: The QEMU submodule (qemu/) and individual files under pebble/ may
+carry their own licensing terms compatible with GPL-2.0. See qemu/LICENSE
+and individual source file headers for details.
