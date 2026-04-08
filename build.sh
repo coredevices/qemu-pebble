@@ -47,6 +47,9 @@ mkdir -p "${QEMU_SRC}/include/hw/arm"
 cp "${PEBBLE_DIR}/include/hw/arm/stm32_common.h" "${QEMU_SRC}/include/hw/arm/"
 cp "${PEBBLE_DIR}/include/hw/arm/pebble.h" "${QEMU_SRC}/include/hw/arm/"
 cp "${PEBBLE_DIR}/include/hw/arm/stm32_clktree.h" "${QEMU_SRC}/include/hw/arm/"
+cp "${PEBBLE_DIR}/include/hw/arm/pebble_generic.h" "${QEMU_SRC}/include/hw/arm/"
+cp "${PEBBLE_DIR}/include/hw/arm/pebble_simple_uart.h" "${QEMU_SRC}/include/hw/arm/"
+cp "${PEBBLE_DIR}/include/hw/arm/pebble_gpio.h" "${QEMU_SRC}/include/hw/arm/"
 
 # Copy hw source files (including headers in source dirs)
 for dir in arm misc char ssi timer dma display gpio block; do
@@ -112,6 +115,24 @@ patch_meson "${QEMU_SRC}/hw/arm/meson.build" "CONFIG_PEBBLE" \
   'pebble_stm32f2xx_soc.c',
 ))"
 
+# hw/arm/meson.build — generic Pebble machines (new platforms)
+patch_meson "${QEMU_SRC}/hw/arm/meson.build" "pebble_generic" \
+"arm_common_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
+  'pebble_generic.c',
+))"
+
+# hw/misc/meson.build — generic Pebble peripherals
+patch_meson "${QEMU_SRC}/hw/misc/meson.build" "pebble_simple_uart" \
+"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
+  'pebble_simple_uart.c',
+  'pebble_sysctrl.c',
+  'pebble_rtc.c',
+  'pebble_timer.c',
+  'pebble_extflash.c',
+  'pebble_touch.c',
+  'pebble_audio.c',
+))"
+
 # hw/misc/meson.build
 patch_meson "${QEMU_SRC}/hw/misc/meson.build" "stm32_pebble" \
 "system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
@@ -155,11 +176,16 @@ patch_meson "${QEMU_SRC}/hw/display/meson.build" "pebble_snowy" \
 "system_ss.add(when: 'CONFIG_PEBBLE', if_true: files(
   'pebble_snowy_display.c',
   'pebble_sm_lcd.c',
+  'pebble_display.c',
 ))"
 
 # hw/gpio/meson.build
 patch_meson "${QEMU_SRC}/hw/gpio/meson.build" "stm32_pebble" \
 "system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('stm32_pebble_gpio.c'))"
+
+# hw/gpio/meson.build — generic Pebble GPIO
+patch_meson "${QEMU_SRC}/hw/gpio/meson.build" "'pebble_gpio.c'" \
+"system_ss.add(when: 'CONFIG_PEBBLE', if_true: files('pebble_gpio.c'))"
 
 # hw/char/meson.build — Pebble's own UART (type "stm32-uart", no conflict
 # with mainline's "stm32f2xx-usart")

@@ -31,6 +31,8 @@
 
 #include "pebble_control.h"
 #include "hw/arm/pebble.h"
+#include "hw/arm/pebble_simple_uart.h"
+#include "hw/arm/pebble_gpio.h"
 
 //#define DEBUG_PEBBLE_CONTROL
 #ifdef DEBUG_PEBBLE_CONTROL
@@ -189,6 +191,12 @@ struct PebbleControl {
     // sending.
     uint8_t send_char_buf[PBLCONTROL_BUF_LEN];
     uint32_t send_char_bytes;    /* number of bytes avaialable in send_char_buf */
+
+    // True if this is a generic (non-STM32) UART connection
+    bool is_generic;
+
+    // For generic UART: the DeviceState pointer (PblSimpleUart)
+    DeviceState *generic_uart;
 };
 
 
@@ -214,7 +222,11 @@ static void pebble_control_button_msg_callback(PebbleControl *s, const uint8_t *
     }
 
     DPRINTF("%s: new button state: 0x%x\n", __func__, (int)hdr->button_state);
-    pebble_set_button_state(hdr->button_state);
+    if (s->is_generic) {
+        pbl_gpio_set_button_state(hdr->button_state);
+    } else {
+        pebble_set_button_state(hdr->button_state);
+    }
 }
 
 
@@ -229,7 +241,7 @@ static const PebbleControlMessageHandler* pebble_control_find_handler(PebbleCont
     };
 
     size_t i;
-    for (i = 0; i < ARRAY_LENGTH(s_msg_endpoints); ++i) {
+    for (i = 0; i < ARRAY_SIZE(s_msg_endpoints); ++i) {
       const PebbleControlMessageHandler* handler = &s_msg_endpoints[i];
       if (!handler || handler->protocol_id > protocol_id) {
         break;
@@ -266,20 +278,25 @@ static void pebble_control_forward_to_target(PebbleControl *s)
     }
     DPRINTF("%s: %d bytes left to send to target\n", __func__, s->target_send_bytes);
 
+    bool sent = false;
     int can_read_bytes = s->uart_chr_can_read(s->uart);
     if (can_read_bytes > 0) {
         can_read_bytes = MIN(can_read_bytes, s->target_send_bytes);
         s->uart_chr_read(s->uart, s->rcv_char_buf, can_read_bytes);
         pebble_control_consume_rcv_bytes(s, can_read_bytes);
         s->target_send_bytes -= can_read_bytes;
+        sent = true;
         DPRINTF("%s: sent %d bytes to target, %d remaining\n", __func__, can_read_bytes,
                   s->target_send_bytes);
     }
 
-    // If more data to send, set a timer so we run again later
+    // If more data to send, retry. Use immediate reschedule when we just sent
+    // data (UART drained fast enough), but back off 1ms when the UART is busy
+    // so the guest CPU gets time to run the ISR and drain the byte.
     if (s->target_send_bytes) {
         DPRINTF("%s: Scheduling pebble_control_forward_to_target timer\n", __func__);
-        timer_mod(s->target_send_timer,  qemu_clock_get_ms(QEMU_CLOCK_HOST) + 1);
+        timer_mod(s->target_send_timer,
+                  qemu_clock_get_ms(QEMU_CLOCK_HOST) + (sent ? 0 : 1));
     }
 }
 
@@ -350,7 +367,9 @@ static void pebble_control_event(void *opaque, QEMUChrEvent event)
 {
     PebbleControl *s = (PebbleControl *)opaque;
 
-    s->uart_chr_event(s->uart, event);
+    if (s->uart_chr_event) {
+        s->uart_chr_event(s->uart, event);
+    }
 }
 
 static int pebble_control_can_receive(void *opaque)
@@ -451,6 +470,14 @@ static int pebble_control_write(void *opaque, const uint8_t *buf, int len) {
             break;
         }
 
+        // Intercept vibration packets for local visualization
+        if (ntohs(hdr->protocol) == QemuProtocol_Vibration && data_len >= 1) {
+            uint8_t *data = s->send_char_buf + sizeof(QemuCommChannelHdr);
+            bool vibe_on = data[0] != 0;
+            extern void pbl_display_set_vibrating(bool on);
+            pbl_display_set_vibrating(vibe_on);
+        }
+
         // We have a complete packet, send it out the front end
         int bytes_sent;
         DPRINTF("%s: Sending packet of %d bytes to host (proto=0x%04x)\n",
@@ -526,6 +553,44 @@ PebbleControl *pebble_control_create(Chardev *chr, Stm32Uart *uart)
 
         // Save away the receive handlers that the uart installed into chr
         stm32_uart_get_rcv_handlers(uart, &s->uart_chr_can_read, &s->uart_chr_read, &s->uart_chr_event);
+
+        // Install our own receive handlers into the CharBackend
+        qemu_chr_fe_set_handlers(&s->chr,
+                        pebble_control_can_receive,
+                        pebble_control_receive,
+                        pebble_control_event,
+                        NULL,
+                        (void *)s,
+                        NULL,
+                        true);
+    }
+
+    return s;
+}
+
+// -----------------------------------------------------------------------------------
+PebbleControl *pebble_control_create_generic(Chardev *chr, DeviceState *uart)
+{
+    PebbleControl *s = g_malloc0(sizeof(PebbleControl));
+
+    if (chr && uart) {
+        s->is_generic = true;
+        s->generic_uart = uart;
+
+        // Initialize our own CharBackend with the chardev
+        qemu_chr_fe_init(&s->chr, chr, &error_abort);
+
+        // The timer we use to pump more data to the uart
+        s->target_send_timer = timer_new_ms(QEMU_CLOCK_HOST,
+                                  (QEMUTimerCB *)pebble_control_parse_receive_buffer, s);
+
+        // Have the simple UART send writes to us
+        pbl_uart_set_write_handler(uart, s, pebble_control_write);
+
+        // Get the UART's receive handlers for forwarding data to firmware
+        pbl_uart_get_rcv_handlers(uart, &s->uart_chr_can_read,
+                                  &s->uart_chr_read, &s->uart_chr_event);
+        s->uart = uart;
 
         // Install our own receive handlers into the CharBackend
         qemu_chr_fe_set_handlers(&s->chr,
