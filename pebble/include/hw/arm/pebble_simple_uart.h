@@ -11,7 +11,7 @@
 #define HW_ARM_PEBBLE_SIMPLE_UART_H
 
 #include "hw/qdev-core.h"
-#include "chardev/char.h"
+#include "chardev/char-fe.h"
 #include "qemu/main-loop.h"
 
 /* Write handler callback type — intercepts firmware UART TX */
