@@ -241,7 +241,7 @@ fi
     --disable-vnc-jpeg \
     --disable-gcrypt \
     --disable-nettle \
-    "${CONFIGURE_EXTRA[@]}" 2>&1 | tail -5
+    ${CONFIGURE_EXTRA[@]+"${CONFIGURE_EXTRA[@]}"} 2>&1 | tail -5
 
 if [ "$OS" = "Darwin" ]; then
     NPROC=$(sysctl -n hw.ncpu)

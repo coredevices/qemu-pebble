@@ -16,6 +16,7 @@
 #include "hw/ssi/ssi.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
+#include "hw/arm/pebble.h"
 #include "system/block-backend.h"
 #include "system/block-backend-io.h"
 #include "system/memory.h"
