@@ -217,13 +217,10 @@ rm -f "${BUILD_DIR}/build.ninja"
 
 cd "${BUILD_DIR}"
 
-# Linux gets a fully static binary so the dist tarball doesn't need bundled libs.
-# macOS dynamically links and ships dylibs alongside the binary (static linking
-# of system frameworks isn't supported on Darwin).
+# Both macOS and Linux dynamically link and ship dependent libs alongside the
+# binary. Fully static linking on Linux with SDL2 is a trap: libudev, libdbus,
+# libwayland etc. don't ship .a files on most distros.
 CONFIGURE_EXTRA=()
-if [ "$OS" = "Linux" ]; then
-    CONFIGURE_EXTRA+=(--static --disable-pie)
-fi
 
 "${QEMU_SRC}/configure" \
     --target-list=arm-softmmu \
@@ -283,8 +280,31 @@ if [ "$OS" = "Darwin" ]; then
         fi
     done
 else
-    # Linux build is fully static — no bundled libs needed.
-    echo "  static build — no libs to bundle"
+    mkdir -p "${DIST_DIR}/lib"
+    # Linux: discover non-system shared libs via ldd and copy them.
+    # Skip libc, libm, libpthread, libdl, ld-linux, etc. — those must come from the host.
+    SKIP_RE='^(linux-vdso\.|ld-linux|libc\.|libm\.|libdl\.|libpthread\.|librt\.|libresolv\.|libnsl\.|libutil\.|libgcc_s\.|libstdc\+\+\.)'
+    ldd "${BUILD_DIR}/qemu-system-arm" \
+        | awk '/=>/ {print $1, $3}' \
+        | while read -r soname libpath; do
+            [ -z "$libpath" ] && continue
+            [ ! -f "$libpath" ] && continue
+            if echo "$soname" | grep -Eq "$SKIP_RE"; then
+                continue
+            fi
+            cp -L "$libpath" "${DIST_DIR}/lib/"
+            echo "  -> lib/$(basename "$libpath")"
+        done
+
+    # Write a wrapper so the binary finds its bundled libs via $ORIGIN/../lib
+    mv "${DIST_DIR}/bin/qemu-pebble" "${DIST_DIR}/bin/qemu-pebble.bin"
+    cat > "${DIST_DIR}/bin/qemu-pebble" << 'WRAPPER'
+#!/bin/sh
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="${HERE}/../lib:${LD_LIBRARY_PATH:-}"
+exec "${HERE}/qemu-pebble.bin" "$@"
+WRAPPER
+    chmod +x "${DIST_DIR}/bin/qemu-pebble"
 fi
 
 echo ""
