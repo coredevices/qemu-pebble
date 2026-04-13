@@ -9,8 +9,14 @@
 #   --clean   Reset QEMU submodule to clean state before building
 #
 # Prerequisites:
-#   - SDL2: brew install sdl2
+#   macOS:        brew install sdl2 pixman glib pkg-config
+#   Debian/Ubuntu: sudo apt install libsdl2-dev libpixman-1-dev libglib2.0-dev \
+#                                   pkg-config ninja-build python3-venv build-essential
 set -euo pipefail
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+echo "=== Host: ${OS} ${ARCH} ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QEMU_SRC="${SCRIPT_DIR}/qemu"
@@ -210,6 +216,15 @@ mkdir -p "${BUILD_DIR}"
 rm -f "${BUILD_DIR}/build.ninja"
 
 cd "${BUILD_DIR}"
+
+# Linux gets a fully static binary so the dist tarball doesn't need bundled libs.
+# macOS dynamically links and ships dylibs alongside the binary (static linking
+# of system frameworks isn't supported on Darwin).
+CONFIGURE_EXTRA=()
+if [ "$OS" = "Linux" ]; then
+    CONFIGURE_EXTRA+=(--static --disable-pie)
+fi
+
 "${QEMU_SRC}/configure" \
     --target-list=arm-softmmu \
     --python="${VENV_DIR}/bin/python3" \
@@ -225,9 +240,15 @@ cd "${BUILD_DIR}"
     --disable-gio \
     --disable-vnc-jpeg \
     --disable-gcrypt \
-    --disable-nettle 2>&1 | tail -5
+    --disable-nettle \
+    "${CONFIGURE_EXTRA[@]}" 2>&1 | tail -5
 
-ninja -j$(sysctl -n hw.ncpu 2>/dev/null || nproc) qemu-system-arm 2>&1
+if [ "$OS" = "Darwin" ]; then
+    NPROC=$(sysctl -n hw.ncpu)
+else
+    NPROC=$(nproc)
+fi
+ninja -j"${NPROC}" qemu-system-arm 2>&1
 
 echo ""
 echo "=== Build complete ==="
@@ -238,27 +259,34 @@ DIST_DIR="${SCRIPT_DIR}/dist"
 echo ""
 echo "=== Bundling distributable ==="
 rm -rf "${DIST_DIR}"
-mkdir -p "${DIST_DIR}/bin" "${DIST_DIR}/lib"
+mkdir -p "${DIST_DIR}/bin"
 
 cp "${BUILD_DIR}/qemu-system-arm" "${DIST_DIR}/bin/qemu-pebble"
 
-# Copy Homebrew dylibs (direct + transitive deps)
-for lib in \
-    "$(brew --prefix pixman)/lib/libpixman-1.0.dylib" \
-    "$(brew --prefix sdl2)/lib/libSDL2-2.0.0.dylib" \
-    "$(brew --prefix glib)/lib/libglib-2.0.0.dylib" \
-    "$(brew --prefix glib)/lib/libgmodule-2.0.0.dylib" \
-    "$(brew --prefix gettext)/lib/libintl.8.dylib" \
-    "$(brew --prefix pcre2)/lib/libpcre2-8.0.dylib"; do
-    if [ -f "$lib" ]; then
-        cp "$lib" "${DIST_DIR}/lib/"
-        echo "  -> lib/$(basename "$lib")"
-    else
-        echo "  WARNING: $lib not found"
-    fi
-done
+if [ "$OS" = "Darwin" ]; then
+    mkdir -p "${DIST_DIR}/lib"
+    # Resolve Homebrew dylibs (direct + transitive deps).
+    # `brew --prefix <pkg>` works on both arm64 (/opt/homebrew) and x86_64 (/usr/local).
+    for lib in \
+        "$(brew --prefix pixman)/lib/libpixman-1.0.dylib" \
+        "$(brew --prefix sdl2)/lib/libSDL2-2.0.0.dylib" \
+        "$(brew --prefix glib)/lib/libglib-2.0.0.dylib" \
+        "$(brew --prefix glib)/lib/libgmodule-2.0.0.dylib" \
+        "$(brew --prefix gettext)/lib/libintl.8.dylib" \
+        "$(brew --prefix pcre2)/lib/libpcre2-8.0.dylib"; do
+        if [ -f "$lib" ]; then
+            cp "$lib" "${DIST_DIR}/lib/"
+            echo "  -> lib/$(basename "$lib")"
+        else
+            echo "  WARNING: $lib not found"
+        fi
+    done
+else
+    # Linux build is fully static — no bundled libs needed.
+    echo "  static build — no libs to bundle"
+fi
 
 echo ""
 echo "=== Distributable ready ==="
 echo "  ${DIST_DIR}/bin/qemu-pebble"
-echo "  ${DIST_DIR}/lib/"
+[ -d "${DIST_DIR}/lib" ] && echo "  ${DIST_DIR}/lib/"
