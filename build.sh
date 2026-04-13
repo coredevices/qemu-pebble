@@ -280,31 +280,9 @@ if [ "$OS" = "Darwin" ]; then
         fi
     done
 else
-    mkdir -p "${DIST_DIR}/lib"
-    # Linux: discover non-system shared libs via ldd and copy them.
-    # Skip libc, libm, libpthread, libdl, ld-linux, etc. — those must come from the host.
-    SKIP_RE='^(linux-vdso\.|ld-linux|libc\.|libm\.|libdl\.|libpthread\.|librt\.|libresolv\.|libnsl\.|libutil\.|libgcc_s\.|libstdc\+\+\.)'
-    ldd "${BUILD_DIR}/qemu-system-arm" \
-        | awk '/=>/ {print $1, $3}' \
-        | while read -r soname libpath; do
-            [ -z "$libpath" ] && continue
-            [ ! -f "$libpath" ] && continue
-            if echo "$soname" | grep -Eq "$SKIP_RE"; then
-                continue
-            fi
-            cp -L "$libpath" "${DIST_DIR}/lib/"
-            echo "  -> lib/$(basename "$libpath")"
-        done
-
-    # Write a wrapper so the binary finds its bundled libs via $ORIGIN/../lib
-    mv "${DIST_DIR}/bin/qemu-pebble" "${DIST_DIR}/bin/qemu-pebble.bin"
-    cat > "${DIST_DIR}/bin/qemu-pebble" << 'WRAPPER'
-#!/bin/sh
-HERE="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="${HERE}/../lib:${LD_LIBRARY_PATH:-}"
-exec "${HERE}/qemu-pebble.bin" "$@"
-WRAPPER
-    chmod +x "${DIST_DIR}/bin/qemu-pebble"
+    # Linux: no libs bundled — users install runtime deps via their package
+    # manager (see Prerequisites at the top of this script).
+    echo "  no libs bundled — runtime deps must be installed by the user"
 fi
 
 echo ""
