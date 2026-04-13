@@ -288,4 +288,6 @@ fi
 echo ""
 echo "=== Distributable ready ==="
 echo "  ${DIST_DIR}/bin/qemu-pebble"
-[ -d "${DIST_DIR}/lib" ] && echo "  ${DIST_DIR}/lib/"
+if [ -d "${DIST_DIR}/lib" ]; then
+    echo "  ${DIST_DIR}/lib/"
+fi
