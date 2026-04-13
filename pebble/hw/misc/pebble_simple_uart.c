@@ -20,6 +20,7 @@
 #include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "hw/qdev-properties-system.h"
+#include "hw/arm/pebble_simple_uart.h"
 #include "chardev/char-fe.h"
 
 #define TYPE_PEBBLE_SIMPLE_UART "pebble-simple-uart"
