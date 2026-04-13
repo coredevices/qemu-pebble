@@ -241,6 +241,7 @@ fi
     --disable-vnc-jpeg \
     --disable-gcrypt \
     --disable-nettle \
+    --disable-werror \
     ${CONFIGURE_EXTRA[@]+"${CONFIGURE_EXTRA[@]}"} 2>&1 | tail -5
 
 if [ "$OS" = "Darwin" ]; then
