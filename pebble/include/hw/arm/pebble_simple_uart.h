@@ -12,6 +12,7 @@
 
 #include "hw/qdev-core.h"
 #include "chardev/char.h"
+#include "qemu/main-loop.h"
 
 /* Write handler callback type — intercepts firmware UART TX */
 typedef int (*PblUartWriteHandler)(void *opaque, const uint8_t *buf, int len);
