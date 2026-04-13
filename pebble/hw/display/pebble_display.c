@@ -467,6 +467,9 @@ static void pbl_display_register_types(void)
 
 type_init(pbl_display_register_types)
 
+/* Called from pebble_control.c when the vibe motor is toggled. */
+void pbl_display_set_vibrating(bool on);
+
 void pbl_display_set_vibrating(bool on)
 {
     PblDisplay *s = s_display_instance;

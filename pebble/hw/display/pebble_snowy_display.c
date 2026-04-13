@@ -526,7 +526,7 @@ static void ps_display_cmd_set_2_unscramble_column(PSDisplayGlobals *s, uint32_t
 {
     int row_idx;
     const int line_bytes = s->num_rows - 2 * s->num_border_rows;
-    uint8_t col_buffer[line_bytes];
+    g_autofree uint8_t *col_buffer = g_malloc(line_bytes);
 
     // Copy the column into temp buffer first, without border pixels
     for (row_idx = 0; row_idx < line_bytes; row_idx++) {
@@ -580,7 +580,7 @@ static void ps_display_cmd_set_2_unscramble_column(PSDisplayGlobals *s, uint32_t
 static void ps_display_cmd_set_2_unscramble_row(PSDisplayGlobals *s, uint32_t row_index)
 {
     const int line_bytes = s->num_cols - 2 * s->num_border_cols;
-    uint8_t row_buffer[line_bytes];
+    g_autofree uint8_t *row_buffer = g_malloc(line_bytes);
     uint8_t *fb = &s->framebuffer[row_index * s->bytes_per_row + s->num_border_cols];
 
     // Copy the row into temp buffer first, without border pixels
